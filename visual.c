@@ -2,6 +2,7 @@
 #include<allegro5/allegro_primitives.h>
 #include<stdio.h>
 #include<stdint.h>
+#include<signal.h>
 #include<errno.h>
 #include<semaphore.h>
 #include<pthread.h>
@@ -143,7 +144,7 @@ void drawVisualizer(uint16_t width, uint16_t height, int readBuffer, double comp
         max[ix]=SHRT_MIN;
         min[ix]=SHRT_MAX;
         if(width<=FRAGLENGTH){
-            while(pos<(ix*FRAGLENGTH)/(width-1)){
+            while(pos<((ix+1)*FRAGLENGTH)/(width)){
                 max[ix]=MAX(max[ix],buf[pos][0][readBuffer]);
                 max[ix]=MAX(max[ix],buf[pos][1][readBuffer]);
                 min[ix]=MIN(min[ix],buf[pos][0][readBuffer]);
@@ -304,6 +305,42 @@ void tests(){
     assert(reverseByteOrder(255,8)==255);
 }
 
+pid_t mpopen(const char * command, int * in, int * out){
+    const int READ=0, WRITE=1;
+    int nStdin[2], nStdout[2];
+    pid_t pid;
+    if(pipe(nStdin) != 0 || pipe(nStdout) != 0){
+        return -1;
+    }
+
+    pid = fork();
+    if(pid<0){
+        return pid;
+    }else if(pid == 0){
+        close(nStdin[WRITE]);
+        dup2(nStdin[READ], fileno(stdin));
+        close(nStdout[READ]);
+        dup2(nStdout[WRITE], fileno(stdout));
+        execl("/bin/sh", "sh", "-c", command, NULL);
+        ERROR("execl() failed to execute, maybe 'pacat' isn't installed?");
+        exit(EXIT_FAILURE);
+    }
+
+    if(in == NULL){
+        close(nStdin[WRITE]);
+    }else{
+        *in=nStdin[WRITE];
+    }
+
+    if(out == NULL){
+        close(nStdout[READ]);
+    }else{
+        *out=nStdout[READ];
+    }
+
+    return pid;
+}
+
 int main(){
     tests();
     char cmdbuf[256] = { 0 };
@@ -315,7 +352,10 @@ int main(){
     }
     sprintf(cmdbuf, "pacat --raw --record --latency-msec=10 --format s16le -d %s.monitor", inputMonitorName);
 
-    FILE * inputDevice = popen(cmdbuf, "r");
+    //FILE * inputDevice = popen(cmdbuf, "r");
+    int fd;
+    pid_t childPID = mpopen(cmdbuf, NULL, &fd);
+    FILE * inputDevice = fdopen(fd, "r");
     if(inputDevice==NULL){
         ERROR("Couldn't popen(\"pacat ...\")");
         fprintf(stderr, "ERRNO: %d\n", errno);
@@ -347,7 +387,7 @@ int main(){
     }
     sem_post(&lock[writeBuffer]);
     quit=1;
-    //pclose(inputDevice);
+    kill(childPID, SIGINT);
     pthread_join(renderThread, NULL);
     return EXIT_SUCCESS;
 }

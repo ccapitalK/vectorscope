@@ -133,8 +133,7 @@ void compute_fft(double complex data[], unsigned int n){
     }
 }
 
-void drawVisualizer(ALLEGRO_DISPLAY * display, uint16_t width, uint16_t height, int readBuffer, double complex * leftArr[2], double complex * rightArr[2], int arrLength){
-    static unsigned int flip=0;
+void drawVisualizer(uint16_t width, uint16_t height, int readBuffer, double complex * leftArr[2], double complex * rightArr[2], int arrLength, unsigned int flip){
     int pos = 0;
     int16_t max[width];
     int16_t min[width];
@@ -143,16 +142,25 @@ void drawVisualizer(ALLEGRO_DISPLAY * display, uint16_t width, uint16_t height, 
     for(uint16_t ix=0; ix<width; ++ix){
         max[ix]=SHRT_MIN;
         min[ix]=SHRT_MAX;
-        --pos;
-        do{
-            ++pos;
+        if(width<=FRAGLENGTH){
+            while(pos<(ix*FRAGLENGTH)/(width-1)){
+                max[ix]=MAX(max[ix],buf[pos][0][readBuffer]);
+                max[ix]=MAX(max[ix],buf[pos][1][readBuffer]);
+                min[ix]=MIN(min[ix],buf[pos][0][readBuffer]);
+                min[ix]=MIN(min[ix],buf[pos][1][readBuffer]);
+                leftArr [flip&1][pos]=buf[pos][0][readBuffer];
+                rightArr[flip&1][pos]=buf[pos][1][readBuffer];
+                ++pos;
+            }
+        }else{
+            pos = (ix * FRAGLENGTH)/width;
             max[ix]=MAX(max[ix],buf[pos][0][readBuffer]);
             max[ix]=MAX(max[ix],buf[pos][1][readBuffer]);
             min[ix]=MIN(min[ix],buf[pos][0][readBuffer]);
             min[ix]=MIN(min[ix],buf[pos][1][readBuffer]);
             leftArr [flip&1][pos]=buf[pos][0][readBuffer];
             rightArr[flip&1][pos]=buf[pos][1][readBuffer];
-        }while(pos<(ix*FRAGLENGTH)/(width-1));
+        }
         //max[ix]=MIN(max[ix],0);
         //min[ix]=MAX(min[ix],0);
     }
@@ -169,7 +177,7 @@ void drawVisualizer(ALLEGRO_DISPLAY * display, uint16_t width, uint16_t height, 
         double rectAmpR=0.0f;
         int numInChunk=0;
 
-        while(pos<(transformRects*i)/(transformRects)){
+        while(pos<(transformRects*(i+1))/(transformRects)){
             rectAmpL +=  leftArr[(flip&1)^0][pos]*0.8;
             rectAmpR += rightArr[(flip&1)^0][pos]*0.8;
             rectAmpL +=  leftArr[(flip&1)^1][pos]*0.2;
@@ -192,11 +200,9 @@ void drawVisualizer(ALLEGRO_DISPLAY * display, uint16_t width, uint16_t height, 
         int16_t maxNormalized=((int)(max[ix])*height)/(2*SHRT_MAX);
         al_draw_line(1+ix,height/2+minNormalized,1+ix,height/2+maxNormalized,al_map_rgb(0x40,0x0ff,0xff),1);
     }
-    flip++;
 }
 
 void * renderLoop(void * parameter){
-    unsigned int flip=0;
     unsigned int fftArrLength=roundToNextPow2(FRAGLENGTH);
     double complex * leftArr [2];
     double complex * rightArr[2];
@@ -206,17 +212,19 @@ void * renderLoop(void * parameter){
     leftArr [1] = malloc(sizeof(double complex)*fftArrLength);
     rightArr[0] = malloc(sizeof(double complex)*fftArrLength);
     rightArr[1] = malloc(sizeof(double complex)*fftArrLength);
-    //ALLEGRO_DISPLAY * display = (ALLEGRO_DISPLAY*) parameter;
     ALLEGRO_DISPLAY * display;
     if(al_init()==0){
         ERROR("Couldn't initialize Allegro");
         exit(EXIT_FAILURE);
     }
+    ALLEGRO_EVENT_QUEUE * ev_queue = al_create_event_queue();
 
     al_set_new_display_flags(ALLEGRO_RESIZABLE | ALLEGRO_NOFRAME);
     display = al_create_display(width, height);
+    al_register_event_source(ev_queue, al_get_display_event_source(display));
     int readBuffer=1;
 
+    unsigned int flip=0;
     for(unsigned int i = 0; i < fftArrLength; ++i){
         leftArr [1][i]=0.0+0.0I;
         rightArr[1][i]=0.0+0.0I;
@@ -229,14 +237,31 @@ void * renderLoop(void * parameter){
         }
         ++flip;
         sem_wait(&lock[readBuffer]);
-        drawVisualizer(display, width, height, readBuffer, leftArr, rightArr, fftArrLength);
+        drawVisualizer(width, height, readBuffer, leftArr, rightArr, fftArrLength, flip);
         al_flip_display();
         sem_post(&lock[readBuffer]);
+        {
+            ALLEGRO_EVENT ev;
+            while(al_get_next_event(ev_queue, &ev)){
+                switch(ev.type){
+                    case ALLEGRO_EVENT_DISPLAY_RESIZE:
+                        width=ev.display.width;
+                        height=ev.display.height;
+                        al_acknowledge_resize(display);
+                        break;
+                    case ALLEGRO_EVENT_DISPLAY_CLOSE:
+                        quit=1;
+                        break;
+                }
+            }
+        }
         readBuffer=!readBuffer;
     }
+    al_destroy_event_queue(ev_queue);
+    al_destroy_display(display);
     free( leftArr[0]);
-    free(rightArr[0]);
     free( leftArr[1]);
+    free(rightArr[0]);
     free(rightArr[1]);
     return NULL;
 }
@@ -302,16 +327,6 @@ int main(){
         return EXIT_FAILURE;
     }
 
-    //ALLEGRO_DISPLAY * display;
-    //if(al_init()==0){
-    //    ERROR("Couldn't initialize Allegro");
-    //    return EXIT_FAILURE;
-    //}
-
-    //al_set_new_display_flags(ALLEGRO_RESIZABLE);
-    //display = al_create_display(640, 320);
-
-    //if(pthread_create(&renderThread, NULL, renderLoop, display)!=0){
     if(pthread_create(&renderThread, NULL, renderLoop, NULL)!=0){
         ERROR("Spawn Render() thread");
         fprintf(stderr, "ERRNO: %d\n", errno);
@@ -320,7 +335,7 @@ int main(){
     int channel=0;
     int writeBuffer=0;
     sem_wait(&lock[writeBuffer]);
-    for(int b=fgetw(inputDevice); b!=EOF; b=fgetw(inputDevice)){
+    for(int b=fgetw(inputDevice); !quit&&b!=EOF; b=fgetw(inputDevice)){
         buf[channel?n++:n][channel][writeBuffer]=b;
         channel=!channel;
         if(n==FRAGLENGTH){
@@ -332,7 +347,7 @@ int main(){
     }
     sem_post(&lock[writeBuffer]);
     quit=1;
-    pclose(inputDevice);
-    pthread_cancel(renderThread);
+    //pclose(inputDevice);
+    pthread_join(renderThread, NULL);
     return EXIT_SUCCESS;
 }

@@ -341,16 +341,20 @@ pid_t mpopen(const char * command, int * in, int * out){
     return pid;
 }
 
-int main(){
+int main(int argc, char * argv[]){
     tests();
     char cmdbuf[256] = { 0 };
     char inputMonitorName[256] = { 0 };
-    getMonitorName(inputMonitorName);
-    if(!inputMonitorName[0]){
-        ERROR("Could not find running pulse sink");
-        return EXIT_FAILURE;
+    if(argc<2){
+        getMonitorName(inputMonitorName);
+        if(!inputMonitorName[0]){
+            ERROR("Could not find running pulse sink");
+            return EXIT_FAILURE;
+        }
+        sprintf(cmdbuf, "pacat --raw --record --latency-msec=10 --format s16le -d %s.monitor", inputMonitorName);
+    }else{
+        sprintf(cmdbuf, "pacat --raw --record --latency-msec=10 --format s16le -d %s", argv[1]);
     }
-    sprintf(cmdbuf, "pacat --raw --record --latency-msec=10 --format s16le -d %s.monitor", inputMonitorName);
 
     //FILE * inputDevice = popen(cmdbuf, "r");
     int fd;

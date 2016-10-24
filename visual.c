@@ -138,8 +138,13 @@ void drawVisualizer(uint16_t width, uint16_t height, int readBuffer, double comp
     int pos = 0;
     int16_t max[width];
     int16_t min[width];
-    //al_draw_filled_rectangle(0, 0, width, height, al_map_rgb(99, 99, 99));
-    al_draw_filled_rectangle(0, 0, width, height, al_map_rgb(50, 50, 50));
+    //const ALLEGRO_COLOR wavCol=al_map_rgb(255, 255, 255);
+    //const ALLEGRO_COLOR bkgndCol=al_map_rgb(255, 25, 25);
+    //const ALLEGRO_COLOR fftCol=al_map_rgb(216, 19, 19);
+    const ALLEGRO_COLOR wavCol=al_map_rgb(255, 255, 255);
+    const ALLEGRO_COLOR bkgndCol=al_map_rgb(29, 116, 239);
+    const ALLEGRO_COLOR fftCol=al_map_rgb(0, 93, 224);
+    al_draw_filled_rectangle(0, 0, width, height, bkgndCol);
     for(uint16_t ix=0; ix<width; ++ix){
         max[ix]=SHRT_MIN;
         min[ix]=SHRT_MAX;
@@ -191,15 +196,15 @@ void drawVisualizer(uint16_t width, uint16_t height, int readBuffer, double comp
 
         uint16_t thisHeightl=CLAMP(0,sqrt(fabs(rectAmpL))/(sqrt(arrLength)/2),160);
         uint16_t thisHeightr=CLAMP(0,sqrt(fabs(rectAmpR))/(sqrt(arrLength)/2),160);
-        al_draw_filled_rectangle(x0,1,x1,1+thisHeightl,               al_map_rgb(255, 0, 0));
-        al_draw_filled_rectangle(x0,height-1-thisHeightr,x1,height-1, al_map_rgb(255, 0, 0));
-        //al_draw_filled_rectangle(x0,height/2-thisHeightl,x1,height/2, al_map_rgb(255, 0, 0));
-        //al_draw_filled_rectangle(x0,height/2,x1,height/2+thisHeightr, al_map_rgb(255, 0, 0));
+        al_draw_filled_rectangle(x0,1,x1,1+thisHeightl,               fftCol);
+        al_draw_filled_rectangle(x0,height-1-thisHeightr,x1,height-1, fftCol);
+        //al_draw_filled_rectangle(x0,height/2-thisHeightl,x1,height/2, fftCol);
+        //al_draw_filled_rectangle(x0,height/2,x1,height/2+thisHeightr, fftCol);
     }
     for(uint16_t ix=0; ix<width; ++ix){
         int16_t minNormalized=((int)(min[ix])*height)/(2*SHRT_MAX);
         int16_t maxNormalized=((int)(max[ix])*height)/(2*SHRT_MAX);
-        al_draw_line(1+ix,height/2+minNormalized,1+ix,height/2+maxNormalized,al_map_rgb(0x40,0x0ff,0xff),1);
+        al_draw_line(1+ix,height/2+minNormalized,1+ix,height/2+maxNormalized,wavCol,1);
     }
 }
 

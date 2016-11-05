@@ -136,8 +136,10 @@ void compute_fft(double complex data[], unsigned int n){
 
 void drawVisualizer(uint16_t width, uint16_t height, int readBuffer, double complex * leftArr[2], double complex * rightArr[2], int arrLength, unsigned int flip){
     int pos = 0;
-    int16_t max[width];
-    int16_t min[width];
+    int16_t maxL[width];
+    int16_t maxR[width];
+    int16_t minL[width];
+    int16_t minR[width];
     //const ALLEGRO_COLOR wavCol=al_map_rgb(255, 255, 255);
     //const ALLEGRO_COLOR bkgndCol=al_map_rgb(255, 25, 25);
     //const ALLEGRO_COLOR fftCol=al_map_rgb(216, 19, 19);
@@ -146,24 +148,27 @@ void drawVisualizer(uint16_t width, uint16_t height, int readBuffer, double comp
     const ALLEGRO_COLOR fftCol=al_map_rgb(0, 93, 224);
     al_draw_filled_rectangle(0, 0, width, height, bkgndCol);
     for(uint16_t ix=0; ix<width; ++ix){
-        max[ix]=SHRT_MIN;
-        min[ix]=SHRT_MAX;
+        maxL[ix]=SHRT_MIN;
+        maxR[ix]=SHRT_MIN;
+        minL[ix]=SHRT_MAX;
+        minR[ix]=SHRT_MAX;
         if(width<=FRAGLENGTH){
-            while(pos<((ix+1)*FRAGLENGTH)/(width)){
-                max[ix]=MAX(max[ix],buf[pos][0][readBuffer]);
-                max[ix]=MAX(max[ix],buf[pos][1][readBuffer]);
-                min[ix]=MIN(min[ix],buf[pos][0][readBuffer]);
-                min[ix]=MIN(min[ix],buf[pos][1][readBuffer]);
+            while(pos<((ix+1)*(FRAGLENGTH-1))/(width)){
+                maxL[ix]=MAX(maxL[ix],buf[pos][0][readBuffer]);
+                maxR[ix]=MAX(maxR[ix],buf[pos][1][readBuffer]);
+                minL[ix]=MIN(minL[ix],buf[pos][0][readBuffer]);
+                minR[ix]=MIN(minR[ix],buf[pos][1][readBuffer]);
                 leftArr [flip&1][pos]=buf[pos][0][readBuffer];
                 rightArr[flip&1][pos]=buf[pos][1][readBuffer];
                 ++pos;
             }
+            --pos;
         }else{
             pos = (ix * FRAGLENGTH)/width;
-            max[ix]=MAX(max[ix],buf[pos][0][readBuffer]);
-            max[ix]=MAX(max[ix],buf[pos][1][readBuffer]);
-            min[ix]=MIN(min[ix],buf[pos][0][readBuffer]);
-            min[ix]=MIN(min[ix],buf[pos][1][readBuffer]);
+            maxL[ix]=MAX(maxL[ix],buf[pos][0][readBuffer]);
+            maxR[ix]=MAX(maxR[ix],buf[pos][1][readBuffer]);
+            minL[ix]=MIN(minL[ix],buf[pos][0][readBuffer]);
+            minR[ix]=MIN(minR[ix],buf[pos][1][readBuffer]);
             leftArr [flip&1][pos]=buf[pos][0][readBuffer];
             rightArr[flip&1][pos]=buf[pos][1][readBuffer];
         }
@@ -201,10 +206,22 @@ void drawVisualizer(uint16_t width, uint16_t height, int readBuffer, double comp
         //al_draw_filled_rectangle(x0,height/2-thisHeightl,x1,height/2, fftCol);
         //al_draw_filled_rectangle(x0,height/2,x1,height/2+thisHeightr, fftCol);
     }
+    //draw the oscilloscope
     for(uint16_t ix=0; ix<width; ++ix){
-        int16_t minNormalized=((int)(min[ix])*height)/(2*SHRT_MAX);
-        int16_t maxNormalized=((int)(max[ix])*height)/(2*SHRT_MAX);
-        al_draw_line(1+ix,height/2+minNormalized,1+ix,height/2+maxNormalized,wavCol,1);
+        int16_t minLNormalized=((int)(minL[ix])*height)/(2*SHRT_MAX);
+        int16_t minRNormalized=((int)(minR[ix])*height)/(2*SHRT_MAX);
+        int16_t maxLNormalized=((int)(maxL[ix])*height)/(2*SHRT_MAX);
+        int16_t maxRNormalized=((int)(maxR[ix])*height)/(2*SHRT_MAX);
+        if((height/2-minLNormalized)!=(height/2-maxLNormalized)){
+            al_draw_line(1+ix,height/2-minLNormalized,1+ix,height/2-maxLNormalized,wavCol,1);
+        }else{
+            al_draw_pixel(1+ix,height/2-minLNormalized,wavCol);
+        }
+        if((height/2-minRNormalized)!=(height/2-maxRNormalized)){
+            al_draw_line(1+ix,height/2-minRNormalized,1+ix,height/2-maxRNormalized,wavCol,1);
+        }else{
+            al_draw_pixel(1+ix,height/2-minRNormalized,wavCol);
+        }
     }
 }
 

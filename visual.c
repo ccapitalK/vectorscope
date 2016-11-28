@@ -61,180 +61,71 @@ int roundToNextPow2(int in){
     return in+1;
 }
 
-void compute_dft(double complex in[], double complex out[], int n){
-    for(int i = 0; i < n; ++i){
-        double sumRe=0.0;
-        for(int j = 0; j < n; ++j){
-            double angle = 2 * M_PI * i * j / n;
-            sumRe+=cos(angle)*in[j];
-        }
-        out[i]+=sumRe+0.0I;
-    }
-}
-
 void swapDC(double complex * a, double complex * b){
     double complex temp = *a;
     *a=*b;
     *b=temp;
 }
 
-unsigned int reverseByteOrder(unsigned int input, unsigned int numBits){
-    unsigned int retVal=0;
-    if(input >= (1U << numBits)){
-        PARAMETER_ERROR();
-    }
-    for(unsigned int i = 0; i < numBits; ++i){
-        retVal<<=1;
-        retVal |= input&1;
-        input>>=1;
-    }
-    return retVal;
+double sampleToOrd(double s, double max){
+    return ((s/(double)INT16_MAX)+1.0)*max/2;
 }
 
-void compute_fft(double complex data[], unsigned int n){
-    //check n is power of two
-    int found=0;
-    unsigned int logN=1;
-    for(unsigned int i = 2; i!=0; i<<=1, logN++){
-        if(i==n){
-            found=1;
-            break;
-        }
-    }
-    if(!found){
-        fprintf(stderr, "Error: call to %s(..., n=%d)\n", __func__, n);
-        exit(EXIT_FAILURE);
-    }
-    //sort by reverse byte order
-    //In this case, we are doing this in place
-    for(unsigned int i = 0; i < n; ++i){
-        unsigned int rev = reverseByteOrder(i,logN);
-        if(i<rev){
-            swapDC(&data[i],&data[rev]);
-        }
-    }
-    //Perform Danielson Lanczos fft
-    unsigned int mmax = 1;
-    while(n > mmax){
-        unsigned int istep = 2 * mmax;
-        double theta = -M_PI/mmax;
-        double temp = sin(theta/2.0);
-        double complex wp = -2.0*temp*temp + sin(theta)*I;
-        double complex w = 1.0 + 0.0I;
-        for(unsigned int m=0; m<mmax; ++m){
-            for(unsigned int i=m; i<n; i+=istep){
-                unsigned int j = i+mmax;
-                double complex temp = w * data[j];
-                data[j]=data[i]-temp;
-                data[i]=data[i]+temp;
-            }
-            w = w * wp + w;
-        }
-        mmax = istep;
-    }
-}
-
-void drawVisualizer(uint16_t width, uint16_t height, int readBuffer, double complex * leftArr[2], double complex * rightArr[2], int arrLength, unsigned int flip){
+void drawVisualizer(int width, int height, int readBuffer, double * leftArr, double * rightArr){
     int pos = 0;
-    int16_t maxL[width];
-    int16_t maxR[width];
-    int16_t minL[width];
-    int16_t minR[width];
     //const ALLEGRO_COLOR wavCol=al_map_rgb(255, 255, 255);
     //const ALLEGRO_COLOR bkgndCol=al_map_rgb(255, 25, 25);
     //const ALLEGRO_COLOR fftCol=al_map_rgb(216, 19, 19);
     const ALLEGRO_COLOR wavCol=al_map_rgb(255, 255, 255);
     const ALLEGRO_COLOR bkgndCol=al_map_rgb(29, 116, 239);
-    const ALLEGRO_COLOR fftCol=al_map_rgb(0, 93, 224);
     al_draw_filled_rectangle(0, 0, width, height, bkgndCol);
-    for(uint16_t ix=0; ix<width; ++ix){
-        maxL[ix]=SHRT_MIN;
-        maxR[ix]=SHRT_MIN;
-        minL[ix]=SHRT_MAX;
-        minR[ix]=SHRT_MAX;
-        if(width<=FRAGLENGTH){
-            while(pos<((ix+1)*(FRAGLENGTH-1))/(width)){
-                maxL[ix]=MAX(maxL[ix],buf[pos][0][readBuffer]);
-                maxR[ix]=MAX(maxR[ix],buf[pos][1][readBuffer]);
-                minL[ix]=MIN(minL[ix],buf[pos][0][readBuffer]);
-                minR[ix]=MIN(minR[ix],buf[pos][1][readBuffer]);
-                leftArr [flip&1][pos]=buf[pos][0][readBuffer];
-                rightArr[flip&1][pos]=buf[pos][1][readBuffer];
-                ++pos;
-            }
-            --pos;
-        }else{
-            pos = (ix * FRAGLENGTH)/width;
-            maxL[ix]=MAX(maxL[ix],buf[pos][0][readBuffer]);
-            maxR[ix]=MAX(maxR[ix],buf[pos][1][readBuffer]);
-            minL[ix]=MIN(minL[ix],buf[pos][0][readBuffer]);
-            minR[ix]=MIN(minR[ix],buf[pos][1][readBuffer]);
-            leftArr [flip&1][pos]=buf[pos][0][readBuffer];
-            rightArr[flip&1][pos]=buf[pos][1][readBuffer];
-        }
-        //max[ix]=MIN(max[ix],0);
-        //min[ix]=MAX(min[ix],0);
-    }
-    compute_fft( leftArr[flip&1],arrLength);
-    compute_fft(rightArr[flip&1],arrLength);
-    int transformRects=128;
-    pos=0;
-    for(uint16_t i=0; i < transformRects; ++i){
-
-        uint16_t x0=(i*(width-1))/transformRects;
-        uint16_t x1=((i+1)*(width-1))/transformRects;
-
-        double rectAmpL=0.0f;
-        double rectAmpR=0.0f;
-        int numInChunk=0;
-
-        while(pos<(transformRects*(i+1))/(transformRects)){
-            rectAmpL +=  leftArr[(flip&1)^0][pos]*0.8;
-            rectAmpR += rightArr[(flip&1)^0][pos]*0.8;
-            rectAmpL +=  leftArr[(flip&1)^1][pos]*0.2;
-            rectAmpR += rightArr[(flip&1)^1][pos]*0.2;
-            ++pos;
-            ++numInChunk;
-        }
-        rectAmpL/=(double)numInChunk;
-        rectAmpR/=(double)numInChunk;
-
-        uint16_t thisHeightl=CLAMP(0,sqrt(fabs(rectAmpL))/(sqrt(arrLength)/2),160);
-        uint16_t thisHeightr=CLAMP(0,sqrt(fabs(rectAmpR))/(sqrt(arrLength)/2),160);
-        al_draw_filled_rectangle(x0,1,x1,1+thisHeightl,               fftCol);
-        al_draw_filled_rectangle(x0,height-1-thisHeightr,x1,height-1, fftCol);
-        //al_draw_filled_rectangle(x0,height/2-thisHeightl,x1,height/2, fftCol);
-        //al_draw_filled_rectangle(x0,height/2,x1,height/2+thisHeightr, fftCol);
-    }
+    
     //draw the oscilloscope
-    for(uint16_t ix=0; ix<width; ++ix){
-        int16_t minLNormalized=((int)(minL[ix])*height)/(2*SHRT_MAX);
-        int16_t minRNormalized=((int)(minR[ix])*height)/(2*SHRT_MAX);
-        int16_t maxLNormalized=((int)(maxL[ix])*height)/(2*SHRT_MAX);
-        int16_t maxRNormalized=((int)(maxR[ix])*height)/(2*SHRT_MAX);
-        if((height/2-minLNormalized)!=(height/2-maxLNormalized)){
-            al_draw_line(1+ix,height/2-minLNormalized,1+ix,height/2-maxLNormalized,wavCol,1);
+    double px = sampleToOrd(  leftArr[0],width);
+    double py = sampleToOrd(-rightArr[0],height);
+    for(int i = 1; i < FRAGLENGTH; ++i){
+        const double x = sampleToOrd(  leftArr[i],width);
+        const double dx = x-px;
+        const double y = sampleToOrd(-rightArr[i],height);
+        const double dy = y-py;
+        double dist = sqrt(dx*dx+dy*dy);
+        double scaleFact = CLAMP(0.0, width/(64.0*dist), 1.0);
+        const ALLEGRO_COLOR lineCol=al_map_rgb(255*scaleFact, 93+162*scaleFact, 239+16*scaleFact);
+        if(x==px && y == py){
         }else{
-            al_draw_pixel(1+ix,height/2-minLNormalized,wavCol);
+            al_draw_line(px,py,x,y,lineCol,1);
         }
-        if((height/2-minRNormalized)!=(height/2-maxRNormalized)){
-            al_draw_line(1+ix,height/2-minRNormalized,1+ix,height/2-maxRNormalized,wavCol,1);
-        }else{
-            al_draw_pixel(1+ix,height/2-minRNormalized,wavCol);
-        }
+        px=x;
+        py=y;
     }
+    for(int i = 0; i < FRAGLENGTH; ++i){
+        const double x = sampleToOrd(  leftArr[i],width);
+        const double y = sampleToOrd(-rightArr[i],height);
+        al_draw_pixel(x,y,wavCol);
+    }
+    //for(int ix=0; ix<width; ++ix){
+    //    int16_t minLNormalized=((int)(minL[ix])*height)/(2*SHRT_MAX);
+    //    int16_t minRNormalized=((int)(minR[ix])*height)/(2*SHRT_MAX);
+    //    int16_t maxLNormalized=((int)(maxL[ix])*height)/(2*SHRT_MAX);
+    //    int16_t maxRNormalized=((int)(maxR[ix])*height)/(2*SHRT_MAX);
+    //    if((height/2-minLNormalized)!=(height/2-maxLNormalized)){
+    //        al_draw_line(1+ix,height/2-minLNormalized,1+ix,height/2-maxLNormalized,wavCol,1);
+    //    }else{
+    //        al_draw_pixel(1+ix,height/2-minLNormalized,wavCol);
+    //    }
+    //    if((height/2-minRNormalized)!=(height/2-maxRNormalized)){
+    //        al_draw_line(1+ix,height/2-minRNormalized,1+ix,height/2-maxRNormalized,wavCol,1);
+    //    }else{
+    //        al_draw_pixel(1+ix,height/2-minRNormalized,wavCol);
+    //    }
+    //}
 }
 
 void * renderLoop(void * parameter){
-    unsigned int fftArrLength=roundToNextPow2(FRAGLENGTH);
-    double complex * leftArr [2];
-    double complex * rightArr[2];
-    uint16_t width=640;
-    uint16_t height=320;
-    leftArr [0] = malloc(sizeof(double complex)*fftArrLength);
-    leftArr [1] = malloc(sizeof(double complex)*fftArrLength);
-    rightArr[0] = malloc(sizeof(double complex)*fftArrLength);
-    rightArr[1] = malloc(sizeof(double complex)*fftArrLength);
+    double *  leftArr = malloc(sizeof(double)*FRAGLENGTH);
+    double * rightArr = malloc(sizeof(double)*FRAGLENGTH);
+    int width=640;
+    int height=640;
     ALLEGRO_DISPLAY * display;
     if(al_init()==0){
         ERROR("Couldn't initialize Allegro");
@@ -247,20 +138,14 @@ void * renderLoop(void * parameter){
     al_register_event_source(ev_queue, al_get_display_event_source(display));
     int readBuffer=1;
 
-    unsigned int flip=0;
-    for(unsigned int i = 0; i < fftArrLength; ++i){
-        leftArr [1][i]=0.0+0.0I;
-        rightArr[1][i]=0.0+0.0I;
-    }
-
+//int16_t buf[FRAGLENGTH][2][2] = { 0 };// [n][channel][buffer]
     while(!quit){
-        for(unsigned int i = 0; i < fftArrLength; ++i){
-            leftArr [flip&1][i]=0.0+0.0I;
-            rightArr[flip&1][i]=0.0+0.0I;
-        }
-        ++flip;
         sem_wait(&lock[readBuffer]);
-        drawVisualizer(width, height, readBuffer, leftArr, rightArr, fftArrLength, flip);
+        for(unsigned int i = 0; i < FRAGLENGTH; ++i){
+            leftArr [i]=buf[i][0][readBuffer];
+            rightArr[i]=buf[i][1][readBuffer];
+        }
+        drawVisualizer(width, height, readBuffer, leftArr, rightArr);
         al_flip_display();
         sem_post(&lock[readBuffer]);
         {
@@ -280,12 +165,10 @@ void * renderLoop(void * parameter){
         }
         readBuffer=!readBuffer;
     }
+    free( leftArr);
+    free(rightArr);
     al_destroy_event_queue(ev_queue);
     al_destroy_display(display);
-    free( leftArr[0]);
-    free( leftArr[1]);
-    free(rightArr[0]);
-    free(rightArr[1]);
     return NULL;
 }
 
@@ -322,9 +205,9 @@ void getMonitorName(char * dest){
 }
 
 void tests(){
-    assert(reverseByteOrder(2,4)==4);
-    assert(reverseByteOrder(4,5)==4);
-    assert(reverseByteOrder(255,8)==255);
+    //assert(reverseByteOrder(2,4)==4);
+    //assert(reverseByteOrder(4,5)==4);
+    //assert(reverseByteOrder(255,8)==255);
 }
 
 pid_t mpopen(const char * command, int * in, int * out){
